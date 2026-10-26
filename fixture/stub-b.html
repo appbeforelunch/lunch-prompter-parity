@@ -1,0 +1,130 @@
+<!doctype html>
+<!--
+  Fixture B for the parity self-test: different UI conventions, the opposite answers to fixture A
+  (known answers in fixture/stub-b-expected.json):
+  HAVE    J1, J2 titled scripts in localStorage, J4 speed list in wpm (px/s proportional), J6 A-/A+ buttons,
+          J8 3-2-1 countdown, J9 + J10 records the raw camera, no limit (camera must be turned on first,
+          file via a Download button)
+  PARTIAL J3 scroll wobbles (moves back a little every second), J5 space stops only after a 1.2 s slow-down
+  MISSING J7 the "Flip" control flips the text upside down, not left to right; J11 refuses to start offline
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stub prompter B</title>
+<style>
+  body { margin: 0; font-family: Georgia, serif; background: #f4f1ea; color: #222; }
+  #editor { padding: 24px; display: grid; grid-template-columns: 220px 1fr; gap: 16px; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { padding: 6px 8px; cursor: pointer; border-bottom: 1px solid #ccc; }
+  textarea { width: 100%; height: 260px; }
+  #prompter { position: fixed; inset: 0; background: #111; color: #fff; overflow: hidden; display: none; }
+  #text { position: absolute; left: 12%; right: 12%; top: 45%; line-height: 1.35; white-space: pre-wrap; }
+  #tools { position: absolute; top: 0; left: 0; right: 0; padding: 8px; background: #222; display: flex; gap: 8px; align-items: center; }
+  #panel { display: none; position: absolute; top: 48px; right: 8px; background: #333; padding: 12px; }
+  #count { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 160px; background: rgba(0,0,0,.6); }
+  #msg { color: #a00; }
+  video { width: 200px; }
+</style>
+</head>
+<body>
+<div id="editor">
+  <aside>
+    <button id="new">New script</button>
+    <ul id="list"></ul>
+  </aside>
+  <main>
+    <input id="title" placeholder="Title" aria-label="Script title">
+    <textarea id="body" aria-label="Script text"></textarea>
+    <div>
+      <button id="save">Save</button>
+      <button id="open" aria-label="Open teleprompter">&#9654;</button>
+      <button id="camera">Camera</button>
+      <button id="rec">Record</button>
+      <button id="dl" style="display:none">Download video</button>
+      <span id="msg"></span>
+    </div>
+    <video id="cam" muted playsinline></video>
+  </main>
+</div>
+<div id="prompter">
+  <div id="text"></div>
+  <div id="count"></div>
+  <div id="tools">
+    <button id="close" aria-label="Close">&#10005;</button>
+    <select id="wpm" aria-label="Speed">
+      <option value="100">100 wpm</option><option value="150" selected>150 wpm</option><option value="200">200 wpm</option>
+      <option value="250">250 wpm</option><option value="300">300 wpm</option><option value="350">350 wpm</option><option value="400">400 wpm</option>
+    </select>
+    <button id="smaller" aria-label="Smaller text">A&minus;</button><span id="fs">48</span><button id="larger" aria-label="Larger text">A+</button>
+    <button id="gear" aria-label="Settings">&#9881;</button>
+  </div>
+  <div id="panel"><button id="flip">Flip text</button></div>
+</div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const KEY = 'stubB.scripts';
+  const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { return []; } };
+  let scripts = load();
+  if (!scripts.length) scripts = [{ id: 1, title: 'Toast', body: 'Butter the toast while it is warm.' }];
+  let cur = scripts[0].id;
+  function renderList() {
+    $('list').innerHTML = '';
+    for (const s of scripts) { const li = document.createElement('li'); li.textContent = s.title; li.addEventListener('click', () => { cur = s.id; $('title').value = s.title; $('body').value = s.body; }); $('list').appendChild(li); }
+  }
+  function show(s) { $('title').value = s.title; $('body').value = s.body; }
+  renderList(); show(scripts.find((s) => s.id === cur));
+  $('new').onclick = () => { const s = { id: Date.now(), title: '', body: '' }; scripts.push(s); cur = s.id; show(s); renderList(); };
+  $('save').onclick = () => { const s = scripts.find((x) => x.id === cur); s.title = $('title').value || 'Untitled'; s.body = $('body').value; localStorage.setItem(KEY, JSON.stringify(scripts)); renderList(); };
+
+  // Prompter: px/s proportional to wpm, with a 1 Hz wobble (moves back a little: J3 not smooth).
+  let state = 'stopped', base = 0, runT = 0, factor = 0, last = 0, fontPx = 48;
+  const A = 25;
+  function frame(t) {
+    const dt = last ? (t - last) / 1000 : 0; last = t;
+    if (state === 'running') factor = 1;
+    else if (state === 'stopping') { factor = Math.max(0, factor - dt / 1.2); if (factor === 0) state = 'paused'; }
+    else factor = 0;
+    const v = parseFloat($('wpm').value) * 0.4;
+    base += v * factor * dt; runT += dt * factor;
+    $('text').style.transform = `translateY(${-(base + A * Math.sin(2 * Math.PI * runT))}px)`;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  $('open').onclick = () => {
+    if (!navigator.onLine) { $('msg').textContent = 'You are offline. Connect to start the prompter.'; return; }
+    $('text').textContent = $('body').value; $('text').style.fontSize = fontPx + 'px';
+    $('editor').style.display = 'none'; $('prompter').style.display = 'block';
+    base = 0; runT = 0; state = 'stopped';
+    let n = 3; const c = $('count'); c.style.display = 'flex'; c.textContent = n;
+    const iv = setInterval(() => { n--; if (n > 0) c.textContent = n; else { clearInterval(iv); c.style.display = 'none'; state = 'running'; } }, 1000);
+  };
+  function close() { state = 'stopped'; $('prompter').style.display = 'none'; $('editor').style.display = 'grid'; }
+  $('close').onclick = close;
+  document.addEventListener('keydown', (e) => {
+    if ($('prompter').style.display !== 'block') return;
+    if (e.code === 'Space') { e.preventDefault(); state = state === 'running' ? 'stopping' : 'running'; }
+    if (e.key === 'Escape') close();
+  });
+  $('larger').onclick = () => { fontPx += 6; $('fs').textContent = fontPx; $('text').style.fontSize = fontPx + 'px'; };
+  $('smaller').onclick = () => { fontPx -= 6; $('fs').textContent = fontPx; $('text').style.fontSize = fontPx + 'px'; };
+  $('gear').onclick = () => { $('panel').style.display = $('panel').style.display === 'block' ? 'none' : 'block'; };
+  $('flip').onclick = () => { $('text').parentElement.style.transform = $('text').parentElement.style.transform ? '' : 'scaleY(-1)'; };
+
+  // Recording: raw camera stream, no limit, the camera has to be turned on first, file via a Download button.
+  let stream = null, rec = null, url = null;
+  $('camera').onclick = async () => { stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); $('cam').srcObject = stream; $('cam').play(); $('msg').textContent = ''; };
+  $('rec').onclick = () => {
+    if (rec && rec.state === 'recording') { rec.stop(); return; }
+    if (!stream) { $('msg').textContent = 'Turn on the camera first.'; return; }
+    const chunks = [];
+    rec = new MediaRecorder(stream);
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    rec.onstop = () => { url = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' })); $('dl').style.display = 'inline'; $('rec').textContent = 'Record'; };
+    rec.start(500);
+    $('rec').textContent = 'Stop';
+  };
+  $('dl').onclick = () => { const a = document.createElement('a'); a.href = url; a.download = 'recording.webm'; a.click(); };
+</script>
+</body>
+</html>

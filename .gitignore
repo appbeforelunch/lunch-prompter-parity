@@ -1,0 +1,4 @@
+node_modules/
+parity-runs/
+.DS_Store
+*.log

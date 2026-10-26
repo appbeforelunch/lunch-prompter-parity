@@ -1,0 +1,89 @@
+<!doctype html>
+<!--
+  Fixture A for the parity self-test. Hand-written, known answers (fixture/stub-expected.json):
+  HAVE    J1 text shows in the prompter, J3 smooth time-based scroll, J5 space pauses at once, J7 mirror = scaleX(-1),
+          J9 records (5 s is fine), J11 no network needed
+  MISSING J2 nothing saved, J4 speed slider is ignored, J6 no text size control, J8 no countdown,
+          J10 watermark drawn on the recording AND a 20 s time limit
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stub prompter A</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #15171c; color: #eee; }
+  #editor { padding: 24px; display: grid; gap: 12px; max-width: 900px; }
+  textarea { width: 100%; height: 300px; font-size: 14px; }
+  #prompter { position: fixed; inset: 0; background: #000; overflow: hidden; display: none; }
+  #wrap { position: absolute; inset: 0; }
+  #wrap.mirror { transform: scaleX(-1); }
+  #text { position: absolute; left: 10%; right: 10%; top: 40%; font-size: 48px; line-height: 1.4; white-space: pre-wrap; }
+  #bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px; background: rgba(0,0,0,.6); }
+  video, canvas { width: 240px; }
+</style>
+</head>
+<body>
+<div id="editor">
+  <h1>Stub prompter A</h1>
+  <label for="script">Script</label>
+  <textarea id="script"></textarea>
+  <label>Speed <input type="range" id="speed" min="1" max="10" value="3"></label>
+  <label><input type="checkbox" id="mirror"> Mirror</label>
+  <div><button id="start">Start prompter</button> <button id="rec">Record</button></div>
+  <video id="cam" muted playsinline></video>
+  <canvas id="cv" width="1280" height="720" style="display:none"></canvas>
+</div>
+<div id="prompter"><div id="wrap"><div id="text"></div></div><div id="bar"><button id="back">Back</button></div></div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let running = false, pos = 0, last = 0;
+  const PX_PER_SEC = 60;   // the speed slider is deliberately ignored
+  function frame(t) {
+    if (running && last) pos += PX_PER_SEC * (t - last) / 1000;
+    last = t;
+    $('text').style.transform = `translateY(${-pos}px)`;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  $('start').onclick = () => {
+    $('text').textContent = $('script').value;
+    $('wrap').classList.toggle('mirror', $('mirror').checked);
+    $('editor').style.display = 'none'; $('prompter').style.display = 'block';
+    pos = 0; running = true;
+  };
+  function back() { running = false; $('prompter').style.display = 'none'; $('editor').style.display = 'grid'; }
+  $('back').onclick = back;
+  document.addEventListener('keydown', (e) => {
+    if ($('prompter').style.display !== 'block') return;
+    if (e.code === 'Space') { e.preventDefault(); running = !running; }
+    if (e.key === 'Escape') back();
+  });
+  // Recording: camera drawn on a canvas WITH a watermark, and a 20 s limit (the "free tier").
+  let rec = null, timer = null;
+  $('rec').onclick = async () => {
+    if (rec && rec.state === 'recording') { rec.stop(); return; }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+    const v = $('cam'); v.srcObject = stream; await v.play();
+    const cv = $('cv'), g = cv.getContext('2d');
+    const draw = () => {
+      g.drawImage(v, 0, 0, 1280, 720);
+      g.fillStyle = 'rgba(255,255,255,0.85)'; g.font = 'bold 28px sans-serif';
+      g.fillText('Made with StubPrompter Free', 860, 690);
+      if (rec && rec.state === 'recording') requestAnimationFrame(draw);
+    };
+    draw();
+    rec = new MediaRecorder(cv.captureStream(30));
+    const chunks = [];
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    rec.onstop = () => {
+      clearTimeout(timer); stream.getTracks().forEach((t) => t.stop()); $('rec').textContent = 'Record';
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' })); a.download = 'take.webm'; a.click();
+    };
+    rec.start(250);
+    draw();
+    $('rec').textContent = 'Stop recording';
+    timer = setTimeout(() => rec.state === 'recording' && rec.stop(), 20000);
+  };
+</script>
+</body>
+</html>

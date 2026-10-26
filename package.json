@@ -1,0 +1,14 @@
+{
+  "name": "lunch-prompter-parity",
+  "version": "1.0.0",
+  "description": "A frozen acceptance check: does a browser teleprompter do the 11 jobs paid teleprompter apps list?",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "selftest": "node parity.mjs fixture/stub.html --expect fixture/stub-expected.json --passes 2"
+  },
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}
